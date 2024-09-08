@@ -1,0 +1,1191 @@
+USER-SUPPLIED VALUES:
+compactor:
+  affinity: {}
+  command: null
+  enabled: true
+  extraArgs: []
+  extraContainers: []
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumeMounts: []
+  extraVolumes: []
+  image:
+    registry: null
+    repository: null
+    tag: null
+  initContainers: []
+  nodeSelector: {}
+  persistence:
+    annotations: {}
+    enabled: true
+    size: 5Gi
+    storageClass: gp2
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: null
+  resources:
+    limits:
+      cpu: 800m
+      memory: 4Gi
+    requests:
+      cpu: 10m
+      memory: 50Mi
+  serviceAccount:
+    annotations: {}
+    automountServiceAccountToken: true
+    create: false
+    imagePullSecrets: []
+    name: null
+  serviceLabels: {}
+  terminationGracePeriodSeconds: 30
+  tolerations: []
+distributor:
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "loki.distributorSelectorLabels" . | nindent 10 }}
+          topologyKey: kubernetes.io/hostname
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                {{- include "loki.distributorSelectorLabels" . | nindent 12 }}
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+  appProtocol:
+    grpc: ""
+  autoscaling:
+    enabled: false
+    maxReplicas: 8
+    minReplicas: 4
+    targetCPUUtilizationPercentage: 60
+    targetMemoryUtilizationPercentage: 60
+  command: null
+  extraArgs: []
+  extraContainers: []
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumeMounts: []
+  extraVolumes: []
+  image:
+    registry: null
+    repository: null
+    tag: null
+  maxUnavailable: 2
+  nodeSelector: {}
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: null
+  replicas: 5
+  resources:
+    limits:
+      cpu: 500m
+      memory: 2Gi
+    requests:
+      cpu: 50m
+      memory: 100Mi
+  serviceLabels: {}
+  terminationGracePeriodSeconds: 30
+  tolerations: []
+fullnameOverride: null
+gateway:
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "loki.gatewaySelectorLabels" . | nindent 10 }}
+          topologyKey: kubernetes.io/hostname
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                {{- include "loki.gatewaySelectorLabels" . | nindent 12 }}
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+  autoscaling:
+    enabled: false
+    maxReplicas: 16
+    minReplicas: 6
+    targetCPUUtilizationPercentage: 60
+    targetMemoryUtilizationPercentage: 60
+  basicAuth:
+    enabled: true
+    existingSecret: loki-distributed-gateway
+    htpasswd: '{{ htpasswd (required "''gateway.basicAuth.username'' is required"
+      .Values.gateway.basicAuth.username) (required "''gateway.basicAuth.password''
+      is required" .Values.gateway.basicAuth.password) }}'
+    password: null
+    username: null
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+  deploymentStrategy:
+    type: RollingUpdate
+  dnsConfig: {}
+  enabled: true
+  extraArgs: []
+  extraContainers: []
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumeMounts: []
+  extraVolumes: []
+  image:
+    pullPolicy: Always
+    registry: docker.io
+    repository: nginxinc/nginx-unprivileged
+    tag: 1.20.2-alpine
+  ingress:
+    annotations: {}
+    enabled: false
+    hosts:
+    - host: gateway.loki.example.com
+      paths:
+      - path: /
+    ingressClassName: ""
+    tls: []
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 30
+  maxUnavailable: 1
+  nginxConfig:
+    file: |
+      worker_processes  5;  ## Default: 1
+      error_log  /dev/stderr;
+      pid        /tmp/nginx.pid;
+      worker_rlimit_nofile 8192;
+      events {
+        worker_connections  4096;  ## Default: 1024
+      }
+      http {
+        client_body_temp_path /tmp/client_temp;
+        proxy_temp_path       /tmp/proxy_temp_path;
+        fastcgi_temp_path     /tmp/fastcgi_temp;
+        uwsgi_temp_path       /tmp/uwsgi_temp;
+        scgi_temp_path        /tmp/scgi_temp;
+        server_tokens off;
+        proxy_read_timeout 300;
+        proxy_connect_timeout 300;
+        proxy_send_timeout 300;
+        proxy_http_version    1.1;
+        default_type application/octet-stream;
+        log_format   {{ .Values.gateway.nginxConfig.logFormat }}
+        {{- if .Values.gateway.verboseLogging }}
+        access_log   /dev/stderr  main;
+        {{- else }}
+        map $status $loggable {
+          ~^[23]  0;
+          default 1;
+        }
+        access_log   /dev/stderr  main  if=$loggable;
+        {{- end }}
+        sendfile     on;
+        tcp_nopush   on;
+        {{- if .Values.gateway.nginxConfig.resolver }}
+        resolver {{ .Values.gateway.nginxConfig.resolver }};
+        {{- else }}
+        resolver {{ .Values.global.dnsService }}.{{ .Values.global.dnsNamespace }}.svc.{{ .Values.global.clusterDomain }};
+        {{- end }}
+        {{- with .Values.gateway.nginxConfig.httpSnippet }}
+        {{ . | nindent 2 }}
+        {{- end }}
+        server {
+          listen             8080;
+          {{- if .Values.gateway.basicAuth.enabled }}
+          auth_basic           "Loki";
+          auth_basic_user_file /etc/nginx/secrets/.htpasswd;
+          {{- end }}
+          location = / {
+            return 200 'OK';
+            auth_basic off;
+            access_log off;
+          }
+          location = /api/prom/push {
+            set $api_prom_push_backend http://{{ include "loki.distributorFullname" . }}.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            proxy_pass       $api_prom_push_backend:3100$request_uri;
+            proxy_http_version 1.1;
+          }
+          location = /api/prom/tail {
+            set $api_prom_tail_backend http://{{ include "loki.querierFullname" . }}.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            proxy_pass       $api_prom_tail_backend:3100$request_uri;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_http_version 1.1;
+          }
+          # Ruler
+          location ~ /prometheus/api/v1/alerts.* {
+            proxy_pass       http://{{ include "loki.rulerFullname" . }}.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:3100$request_uri;
+          }
+          location ~ /prometheus/api/v1/rules.* {
+            proxy_pass       http://{{ include "loki.rulerFullname" . }}.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:3100$request_uri;
+          }
+          location ~ /api/prom/rules.* {
+            proxy_pass       http://{{ include "loki.rulerFullname" . }}.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:3100$request_uri;
+          }
+          location ~ /api/prom/alerts.* {
+            proxy_pass       http://{{ include "loki.rulerFullname" . }}.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:3100$request_uri;
+          }
+          location ~ /api/prom/.* {
+            set $api_prom_backend http://{{ include "loki.queryFrontendFullname" . }}-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            proxy_pass       $api_prom_backend:3100$request_uri;
+            proxy_http_version 1.1;
+          }
+          location = /loki/api/v1/push {
+            set $loki_api_v1_push_backend http://{{ include "loki.distributorFullname" . }}.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            proxy_pass       $loki_api_v1_push_backend:3100$request_uri;
+            proxy_http_version 1.1;
+            client_max_body_size  110M;
+          }
+          location = /loki/api/v1/tail {
+            set $loki_api_v1_tail_backend http://{{ include "loki.querierFullname" . }}.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            proxy_pass       $loki_api_v1_tail_backend:3100$request_uri;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_http_version 1.1;
+            client_max_body_size  100M;
+          }
+          location ~ /loki/api/.* {
+            set $loki_api_backend http://{{ include "loki.queryFrontendFullname" . }}-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            proxy_pass       $loki_api_backend:3100$request_uri;
+            proxy_http_version 1.1;
+            client_max_body_size  100M;
+          }
+          {{- with .Values.gateway.nginxConfig.serverSnippet }}
+          {{ . | nindent 4 }}
+          {{- end }}
+        }
+      }
+    httpSnippet: ""
+    logFormat: |-
+      main '$remote_addr - $remote_user [$time_local]  $status '
+              '"$request" $body_bytes_sent "$http_referer" '
+              '"$http_user_agent" "$http_x_forwarded_for"';
+    resolver: ""
+    serverSnippet: ""
+  nodeSelector: {}
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    fsGroup: 1001010001
+    runAsGroup: 1001010001
+    runAsNonRoot: true
+    runAsUser: 1001010001
+  priorityClassName: null
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 15
+    timeoutSeconds: 1
+  replicas: 10
+  resources:
+    limits:
+      cpu: "5"
+      memory: 1Gi
+    requests:
+      cpu: "1"
+      memory: 50Mi
+  service:
+    annotations: {}
+    appProtocol: null
+    clusterIP: null
+    labels: {}
+    loadBalancerIP: null
+    loadBalancerSourceRanges: []
+    nodePort: null
+    port: 80
+    type: ClusterIP
+  terminationGracePeriodSeconds: 30
+  tolerations: []
+  verboseLogging: true
+global:
+  clusterDomain: cluster.local
+  dnsNamespace: openshift-dns
+  dnsService: dns-default
+  image:
+    registry: null
+  priorityClassName: null
+imagePullSecrets: []
+indexGateway:
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "loki.indexGatewaySelectorLabels" . | nindent 10 }}
+          topologyKey: kubernetes.io/hostname
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                {{- include "loki.indexGatewaySelectorLabels" . | nindent 12 }}
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+  enabled: true
+  extraArgs: []
+  extraContainers: []
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumeMounts: []
+  extraVolumes: []
+  image:
+    registry: null
+    repository: null
+    tag: null
+  initContainers: []
+  maxUnavailable: 1
+  nodeSelector: {}
+  persistence:
+    annotations: {}
+    enabled: false
+    inMemory: false
+    size: 50Gi
+    storageClass: gp2
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: null
+  replicas: 16
+  resources:
+    limits:
+      cpu: "8"
+      memory: 18Gi
+    requests:
+      cpu: 200m
+      memory: 1Gi
+  serviceLabels: {}
+  terminationGracePeriodSeconds: 300
+  tolerations: []
+ingester:
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "loki.ingesterSelectorLabels" . | nindent 10 }}
+          topologyKey: kubernetes.io/hostname
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                {{- include "loki.ingesterSelectorLabels" . | nindent 12 }}
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+  appProtocol:
+    grpc: ""
+  autoscaling:
+    enabled: false
+    maxReplicas: 25
+    minReplicas: 6
+    targetMemoryUtilizationPercentage: 80
+  command: null
+  extraArgs: []
+  extraContainers: []
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumeMounts: []
+  extraVolumes: []
+  image:
+    registry: null
+    repository: null
+    tag: null
+  initContainers: []
+  kind: StatefulSet
+  livenessProbe: {}
+  maxUnavailable: 1
+  nodeSelector: {}
+  persistence:
+    annotations: {}
+    enabled: true
+    inMemory: false
+    size: 20Gi
+    storageClass: gp2
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: null
+  readinessProbe: {}
+  replicas: 16
+  resources:
+    limits:
+      cpu: "2"
+      memory: 8Gi
+    requests:
+      cpu: 200m
+      memory: 1228Mi
+  serviceLabels: {}
+  terminationGracePeriodSeconds: 300
+  tolerations: []
+  topologySpreadConstraints: |
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          {{- include "loki.ingesterSelectorLabels" . | nindent 6 }}
+ingress:
+  annotations: {}
+  enabled: false
+  hosts:
+  - loki.example.com
+  paths:
+    distributor:
+    - /api/prom/push
+    - /loki/api/v1/push
+    querier:
+    - /api/prom/tail
+    - /loki/api/v1/tail
+    query-frontend:
+    - /loki/api
+    ruler:
+    - /api/prom/rules
+    - /loki/api/v1/rules
+    - /prometheus/api/v1/rules
+    - /prometheus/api/v1/alerts
+loki:
+  annotations: {}
+  appProtocol: ""
+  command: null
+  config: |
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+    common:
+      compactor_address: http://{{ include "loki.compactorFullname" . }}:3100
+    distributor:
+      ring:
+        kvstore:
+          store: memberlist
+    memberlist:
+      join_members:
+        - {{ include "loki.fullname" . }}-memberlist
+    ingester:
+      lifecycler:
+        ring:
+          kvstore:
+            store: memberlist
+          replication_factor: 2
+      chunk_idle_period: 30m
+      chunk_block_size: 262144
+      chunk_encoding: snappy
+      chunk_retain_period: 1m
+      max_transfer_retries: 0
+      wal:
+        dir: /var/loki/wal
+    limits_config:
+      enforce_metric_name: false
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+      max_cache_freshness_per_query: 10m
+      split_queries_by_interval: 15m
+    {{- if .Values.loki.schemaConfig}}
+    schema_config:
+    {{- toYaml .Values.loki.schemaConfig | nindent 2}}
+    {{- end}}
+    {{- if .Values.loki.storageConfig}}
+    storage_config:
+    {{- if .Values.indexGateway.enabled}}
+    {{- $indexGatewayClient := dict "server_address" (printf "dns:///%s:9095" (include "loki.indexGatewayFullname" .)) }}
+    {{- $_ := set .Values.loki.storageConfig.boltdb_shipper "index_gateway_client" $indexGatewayClient }}
+    {{- end}}
+    {{- toYaml .Values.loki.storageConfig | nindent 2}}
+    {{- if .Values.memcachedIndexQueries.enabled }}
+      index_queries_cache_config:
+        memcached_client:
+          addresses: dnssrv+_memcached-client._tcp.{{ include "loki.memcachedIndexQueriesFullname" . }}.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}
+          consistent_hash: true
+    {{- end}}
+    {{- end}}
+    runtime_config:
+      file: /var/{{ include "loki.name" . }}-runtime/runtime.yaml
+    chunk_store_config:
+      max_look_back_period: 0s
+      {{- if .Values.memcachedChunks.enabled }}
+      chunk_cache_config:
+        embedded_cache:
+          enabled: false
+        memcached_client:
+          consistent_hash: true
+          addresses: dnssrv+_memcached-client._tcp.{{ include "loki.memcachedChunksFullname" . }}.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}
+      {{- end }}
+      {{- if .Values.memcachedIndexWrites.enabled }}
+      write_dedupe_cache_config:
+        memcached_client:
+          consistent_hash: true
+          addresses: dnssrv+_memcached-client._tcp.{{ include "loki.memcachedIndexWritesFullname" . }}.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}
+      {{- end }}
+    table_manager:
+      retention_deletes_enabled: false
+      retention_period: 0s
+    query_range:
+      align_queries_with_step: true
+      max_retries: 5
+      cache_results: true
+      results_cache:
+        cache:
+          {{- if .Values.memcachedFrontend.enabled }}
+          memcached_client:
+            host: {{ include "loki.memcachedFrontendFullname" . }}
+            consistent_hash: true
+          {{- else }}
+          embedded_cache:
+            enabled: true
+            ttl: 24h
+          {{- end }}
+    frontend_worker:
+      {{- if .Values.queryScheduler.enabled }}
+      scheduler_address: {{ include "loki.querySchedulerFullname" . }}:9095
+      {{- else }}
+      frontend_address: {{ include "loki.queryFrontendFullname" . }}:9095
+      {{- end }}
+    frontend:
+      log_queries_longer_than: 5s
+      compress_responses: true
+      {{- if .Values.queryScheduler.enabled }}
+      scheduler_address: {{ include "loki.querySchedulerFullname" . }}:9095
+      {{- end }}
+      tail_proxy_url: http://{{ include "loki.querierFullname" . }}:3100
+    compactor:
+      shared_store: filesystem
+    ruler:
+      storage:
+        type: local
+        local:
+          directory: /etc/loki/rules
+      ring:
+        kvstore:
+          store: memberlist
+      rule_path: /tmp/loki/scratch
+      alertmanager_url: https://alertmanager.xx
+      external_url: https://alertmanager.xx
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+  existingSecretForConfig: loki-config-secret
+  image:
+    pullPolicy: Always
+    registry: docker.io
+    repository: grafana/loki
+    tag: 2.9.7
+  livenessProbe:
+    failureThreshold: 5
+    httpGet:
+      path: /ready
+      port: http
+    initialDelaySeconds: 300
+    periodSeconds: 10
+    successThreshold: 1
+    timeoutSeconds: 5
+  podAnnotations: {}
+  podLabels: {}
+  podSecurityContext:
+    fsGroup: 1001010001
+    runAsGroup: 1001010001
+    runAsNonRoot: true
+    runAsUser: 1001010001
+  readinessProbe:
+    failureThreshold: 5
+    httpGet:
+      path: /ready
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    successThreshold: 1
+    timeoutSeconds: 5
+  revisionHistoryLimit: 10
+  schemaConfig:
+    configs:
+    - from: "2020-09-07"
+      index:
+        period: 24h
+        prefix: loki_index_
+      object_store: filesystem
+      schema: v11
+      store: boltdb-shipper
+  serviceAnnotations: {}
+  storageConfig:
+    boltdb_shipper:
+      active_index_directory: /var/loki/index
+      cache_location: /var/loki/cache
+      cache_ttl: 168h
+      shared_store: filesystem
+    filesystem:
+      directory: /var/loki/chunks
+  structuredConfig: {}
+memcached:
+  appProtocol: ""
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+  image:
+    pullPolicy: IfNotPresent
+    registry: docker.io
+    repository: memcached
+    tag: 1.6.21-alpine
+  livenessProbe:
+    initialDelaySeconds: 10
+    tcpSocket:
+      port: http
+  podLabels: {}
+  podSecurityContext:
+    fsGroup: 1001010001
+    runAsGroup: 1001010001
+    runAsNonRoot: true
+    runAsUser: 1001010001
+  readinessProbe:
+    initialDelaySeconds: 5
+    tcpSocket:
+      port: http
+    timeoutSeconds: 1
+  serviceAnnotations: {}
+memcachedChunks:
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "loki.memcachedChunksSelectorLabels" . | nindent 10 }}
+          topologyKey: kubernetes.io/hostname
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                {{- include "loki.memcachedChunksSelectorLabels" . | nindent 12 }}
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+  autoscaling:
+    enabled: true
+    maxReplicas: 10
+    minReplicas: 4
+    targetMemoryUtilizationPercentage: 90
+  enabled: false
+  extraArgs:
+  - -m 4096
+  - -I 48m
+  - -c 1000000
+  - -v
+  extraContainers: []
+  extraEnv: []
+  extraEnvFrom: []
+  maxUnavailable: 1
+  nodeSelector: {}
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: gp2
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: null
+  replicas: 4
+  resources:
+    limits:
+      cpu: "1"
+      memory: 3Gi
+    requests:
+      cpu: 10m
+      memory: 500Mi
+  serviceLabels: {}
+  terminationGracePeriodSeconds: 30
+  tolerations: []
+memcachedExporter:
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+    readOnlyRootFilesystem: true
+  enabled: false
+  image:
+    pullPolicy: IfNotPresent
+    registry: docker.io
+    repository: prom/memcached-exporter
+    tag: v0.13.0
+  podLabels: {}
+  resources: {}
+memcachedFrontend:
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "loki.memcachedFrontendSelectorLabels" . | nindent 10 }}
+          topologyKey: kubernetes.io/hostname
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                {{- include "loki.memcachedFrontendSelectorLabels" . | nindent 12 }}
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+  enabled: false
+  extraArgs:
+  - -m 4096
+  - -I 48m
+  - -c 1000000
+  - -v
+  extraContainers: []
+  extraEnv: []
+  extraEnvFrom: []
+  maxUnavailable: 1
+  nodeSelector: {}
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: gp2
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: null
+  replicas: 2
+  resources:
+    limits:
+      cpu: 500m
+      memory: 2Gi
+    requests:
+      cpu: 10m
+      memory: 50Mi
+  serviceLabels: {}
+  terminationGracePeriodSeconds: 30
+  tolerations: []
+memcachedIndexQueries:
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "loki.memcachedIndexQueriesSelectorLabels" . | nindent 10 }}
+          topologyKey: kubernetes.io/hostname
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                {{- include "loki.memcachedIndexQueriesSelectorLabels" . | nindent 12 }}
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+  enabled: false
+  extraArgs:
+  - -m 4096
+  - -I 48m
+  - -c 1000000
+  - -v
+  extraContainers: []
+  extraEnv: []
+  extraEnvFrom: []
+  maxUnavailable: 1
+  nodeSelector: {}
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: gp2
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: null
+  replicas: 2
+  resources:
+    limits:
+      cpu: "1"
+      memory: 1Gi
+    requests:
+      cpu: 10m
+      memory: 50Mi
+  serviceLabels: {}
+  terminationGracePeriodSeconds: 30
+  tolerations: []
+memcachedIndexWrites:
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "loki.memcachedIndexWritesSelectorLabels" . | nindent 10 }}
+          topologyKey: kubernetes.io/hostname
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                {{- include "loki.memcachedIndexWritesSelectorLabels" . | nindent 12 }}
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+  enabled: false
+  extraArgs:
+  - -m 4096
+  - -I 48m
+  - -c 1000000
+  - -v
+  extraContainers: []
+  extraEnv: []
+  extraEnvFrom: []
+  maxUnavailable: null
+  nodeSelector: {}
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: gp2
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: null
+  replicas: 1
+  resources:
+    limits:
+      cpu: 300m
+      memory: 1Gi
+    requests:
+      cpu: 10m
+      memory: 100Mi
+  serviceLabels: {}
+  terminationGracePeriodSeconds: 30
+  tolerations: []
+nameOverride: null
+networkPolicy:
+  alertmanager:
+    namespaceSelector: {}
+    podSelector: {}
+    port: 9093
+  discovery:
+    namespaceSelector: {}
+    podSelector: {}
+    port: null
+  enabled: false
+  externalStorage:
+    cidrs: []
+    ports: []
+  ingress:
+    namespaceSelector: {}
+    podSelector: {}
+  metrics:
+    cidrs: []
+    namespaceSelector: {}
+    podSelector: {}
+prometheusRule:
+  annotations: {}
+  enabled: true
+  groups: []
+  labels: {}
+  namespace: null
+querier:
+  affinity: {}
+  appProtocol:
+    grpc: ""
+  autoscaling:
+    enabled: false
+    maxReplicas: 80
+    minReplicas: 48
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 60
+  command: null
+  dnsConfig: {}
+  extraArgs: []
+  extraContainers: []
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumeMounts: []
+  extraVolumes: []
+  image:
+    registry: null
+    repository: null
+    tag: null
+  initContainers: []
+  maxUnavailable: 1
+  nodeSelector: {}
+  persistence:
+    annotations: {}
+    enabled: true
+    size: 10Gi
+    storageClass: gp2
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: null
+  replicas: 60
+  resources:
+    limits:
+      cpu: "5"
+      memory: 16Gi
+    requests:
+      cpu: 100m
+      memory: 2Gi
+  serviceLabels: {}
+  terminationGracePeriodSeconds: 30
+  tolerations: []
+  topologySpreadConstraints: |
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          {{- include "loki.querierSelectorLabels" . | nindent 6 }}
+queryFrontend:
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "loki.queryFrontendSelectorLabels" . | nindent 10 }}
+          topologyKey: kubernetes.io/hostname
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                {{- include "loki.queryFrontendSelectorLabels" . | nindent 12 }}
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+  appProtocol:
+    grpc: ""
+  autoscaling:
+    enabled: false
+    maxReplicas: 8
+    minReplicas: 3
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  command: null
+  extraArgs: []
+  extraContainers: []
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumeMounts: []
+  extraVolumes: []
+  image:
+    registry: null
+    repository: null
+    tag: null
+  maxUnavailable: 1
+  nodeSelector: {}
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: null
+  replicas: 6
+  resources:
+    limits:
+      cpu: "3"
+      memory: 14Gi
+    requests:
+      cpu: 50m
+      memory: 500Mi
+  serviceLabels: {}
+  terminationGracePeriodSeconds: 30
+  tolerations: []
+queryScheduler:
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "loki.querySchedulerSelectorLabels" . | nindent 10 }}
+          topologyKey: kubernetes.io/hostname
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                {{- include "loki.querySchedulerSelectorLabels" . | nindent 12 }}
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+  enabled: true
+  extraArgs: []
+  extraContainers: []
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumeMounts: []
+  extraVolumes: []
+  image:
+    registry: null
+    repository: null
+    tag: null
+  maxUnavailable: 1
+  nodeSelector: {}
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: null
+  replicas: 6
+  resources:
+    limits:
+      cpu: "4"
+      memory: 14Gi
+    requests:
+      cpu: 10m
+      memory: 50Mi
+  serviceLabels: {}
+  terminationGracePeriodSeconds: 30
+  tolerations: []
+rbac:
+  pspEnabled: false
+  sccEnabled: false
+ruler:
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "loki.rulerSelectorLabels" . | nindent 10 }}
+          topologyKey: kubernetes.io/hostname
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                {{- include "loki.rulerSelectorLabels" . | nindent 12 }}
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+  command: null
+  directories:
+    tenant_bar:
+      rules1.txt: |
+        groups:
+          - name: should_fire
+            rules:
+              - alert: HighPercentageError
+                expr: |
+                  sum(rate({app="foo", env="production"} |= "error" [5m])) by (job)
+                    /
+                  sum(rate({app="foo", env="production"}[5m])) by (job)
+                    > 0.05
+                for: 10m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: High error rate
+          - name: credentials_leak
+            rules:
+              - alert: http-credentials-leaked
+                annotations:
+                  message: "{{ $labels.job }} is leaking http basic auth credentials."
+                expr: 'sum by (cluster, job, pod) (count_over_time({namespace="prod"} |~ "http(s?)://(\\w+):(\\w+)@" [5m]) > 0)'
+                for: 10m
+                labels:
+                  severity: critical
+      rules2.txt: |
+        groups:
+          - name: example
+            rules:
+            - alert: HighThroughputLogStreams
+              expr: sum by(container) (rate({job=~"loki-dev/.*"}[1m])) > 1000
+              for: 2m
+    tenant_foo:
+      rules1.txt: |
+        groups:
+          - name: should_fire
+            rules:
+              - alert: HighPercentageError
+                expr: |
+                  sum(rate({app="foo", env="production"} |= "error" [5m])) by (job)
+                    /
+                  sum(rate({app="foo", env="production"}[5m])) by (job)
+                    > 0.05
+                for: 10m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: High error rate
+          - name: credentials_leak
+            rules:
+              - alert: http-credentials-leaked
+                annotations:
+                  message: "{{ $labels.job }} is leaking http basic auth credentials."
+                expr: 'sum by (cluster, job, pod) (count_over_time({namespace="prod"} |~ "http(s?)://(\\w+):(\\w+)@" [5m]) > 0)'
+                for: 10m
+                labels:
+                  severity: critical
+      rules2.txt: |
+        groups:
+          - name: example
+            rules:
+            - alert: HighThroughputLogStreams
+              expr: sum by(container) (rate({job=~"loki-dev/.*"}[1m])) > 1000
+              for: 2m
+  dnsConfig: {}
+  enabled: true
+  extraArgs: []
+  extraContainers: []
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumeMounts: []
+  extraVolumes: []
+  image:
+    registry: null
+    repository: null
+    tag: null
+  initContainers: []
+  kind: Deployment
+  maxUnavailable: null
+  nodeSelector: {}
+  persistence:
+    annotations: {}
+    enabled: false
+    size: 5Gi
+    storageClass: gp2
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: null
+  replicas: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 2Gi
+    requests:
+      cpu: 10m
+      memory: 100Mi
+  serviceLabels: {}
+  terminationGracePeriodSeconds: 300
+  tolerations: []
+runtimeConfig: {}
+serviceAccount:
+  annotations: {}
+  automountServiceAccountToken: true
+  create: true
+  imagePullSecrets: []
+  name: null
+serviceMonitor:
+  annotations: {}
+  enabled: true
+  interval: 60s
+  labels: {}
+  metricRelabelings: []
+  namespace: null
+  namespaceSelector: {}
+  relabelings: []
+  scheme: http
+  scrapeTimeout: 15s
+  targetLabels: []
+  tlsConfig: null
+tableManager:
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              {{- include "loki.tableManagerSelectorLabels" . | nindent 10 }}
+          topologyKey: kubernetes.io/hostname
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                {{- include "loki.tableManagerSelectorLabels" . | nindent 12 }}
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+  command: null
+  enabled: true
+  extraArgs: []
+  extraContainers: []
+  extraEnv: []
+  extraEnvFrom: []
+  extraVolumeMounts: []
+  extraVolumes: []
+  image:
+    registry: null
+    repository: null
+    tag: null
+  nodeSelector: {}
+  podAnnotations: {}
+  podLabels: {}
+  priorityClassName: null
+  resources: {}
+  serviceLabels: {}
+  terminationGracePeriodSeconds: 30
+  tolerations: []
