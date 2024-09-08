@@ -3,22 +3,35 @@ package main
 import (
 	"aws-lambda-s3/handler"
 	"aws-lambda-s3/repositories"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 )
 
-func generateExpectedBody(objectCount int, nextContinuationToken string) string {
+func generateExpectedBody(objectCount int, nextContinuationToken string) (string, error) {
 	var objectList []string
 	for i := 1; i <= objectCount; i++ {
 		objectList = append(objectList, fmt.Sprintf("\"object%d.txt\"", i))
 	}
-	return fmt.Sprintf(`{"objects":[%s],"nextContinuationToken":"%s"}`, strings.Join(objectList, ","), nextContinuationToken)
+	response := handler.OutputResponse{
+		BucketName:   "test-bucket",
+		Key:          "",
+		ErrorMessage: "",
+		Timestamp:    time.Now(),
+		Body:         fmt.Sprintf(`{"objects":[%s],"nextContinuationToken":"%s"}`, strings.Join(objectList, ","), nextContinuationToken),
+	}
+	body, err := json.Marshal(response)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
 }
 
 func TestHandleRequest(t *testing.T) {
@@ -45,7 +58,10 @@ func TestHandleRequest(t *testing.T) {
 				},
 			},
 			expectedStatusCode: http.StatusOK,
-			expectedBody:       generateExpectedBody(30, ""),
+			expectedBody: func() string {
+				body, _ := generateExpectedBody(30, "")
+				return body
+			}(),
 		},
 		{
 			name: "GET request for single object",
@@ -57,13 +73,23 @@ func TestHandleRequest(t *testing.T) {
 				Handler: handler.Handler{
 					S3Client: &repositories.S3Client{
 						Client: &repositories.S3Mock{
-							MockTest: "valid key",
+							MockTest: "valid",
 						},
 					},
 				},
 			},
 			expectedStatusCode: http.StatusOK,
-			expectedBody:       "{\"SomethingCool\":\"cool beans\"}", // Expected content of object1.txt
+			expectedBody: func() string {
+				response := handler.OutputResponse{
+					BucketName:   "test-bucket",
+					Key:          "object1.txt",
+					ErrorMessage: "",
+					Timestamp:    time.Now(),
+					Body:         "{\"SomethingCool\":\"cool beans\"}", // Expected content of object1.txt
+				}
+				body, _ := json.Marshal(response)
+				return string(body)
+			}(),
 		},
 		{
 			name: "DELETE request for single object",
@@ -81,7 +107,17 @@ func TestHandleRequest(t *testing.T) {
 				},
 			},
 			expectedStatusCode: http.StatusOK,
-			expectedBody:       "Deleted object1.txt successfully", // Expected delete confirmation
+			expectedBody: func() string {
+				response := handler.OutputResponse{
+					BucketName:   "test-bucket",
+					Key:          "object1.txt",
+					ErrorMessage: "",
+					Timestamp:    time.Now(),
+					Body:         "Deleted object1.txt successfully", // Expected delete confirmation
+				}
+				body, _ := json.Marshal(response)
+				return string(body)
+			}(),
 		},
 		{
 			name: "DELETE request with nil object key",
@@ -99,7 +135,17 @@ func TestHandleRequest(t *testing.T) {
 				},
 			},
 			expectedStatusCode: http.StatusInternalServerError,
-			expectedBody:       "object key is passed as nil - ", // Expected error message
+			expectedBody: func() string {
+				response := handler.OutputResponse{
+					BucketName:   "test-bucket",
+					Key:          "",
+					ErrorMessage: "object key is passed as nil",
+					Timestamp:    time.Now(),
+					Body:         "",
+				}
+				body, _ := json.Marshal(response)
+				return string(body)
+			}(),
 		},
 	}
 
@@ -109,7 +155,14 @@ func TestHandleRequest(t *testing.T) {
 			response, err := tt.handler.handleRequest(tt.request)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedStatusCode, response.StatusCode)
-			assert.Equal(t, tt.expectedBody, response.Body)
+
+			// Compare the body while ignoring the timestamp
+			var expectedOutput, actualOutput handler.OutputResponse
+			_ = json.Unmarshal([]byte(tt.expectedBody), &expectedOutput)
+			_ = json.Unmarshal([]byte(response.Body), &actualOutput)
+
+			expectedOutput.Timestamp = actualOutput.Timestamp // Ignore timestamp for comparison
+			assert.Equal(t, expectedOutput, actualOutput)
 		})
 	}
 }
