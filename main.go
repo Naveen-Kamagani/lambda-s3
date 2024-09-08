@@ -16,10 +16,9 @@ import (
 )
 
 var (
-	env        = os.Getenv("ENV")
-	region     = os.Getenv("AWS_REGION")
-	bucketName = os.Getenv("BUCKET_NAME")
-	hndlr      MyHandler
+	env    = os.Getenv("ENV")
+	region = os.Getenv("AWS_REGION")
+	hndlr  MyHandler
 )
 
 // type Handler struct {
@@ -70,20 +69,20 @@ func init() {
 }
 
 func (h *MyHandler) handleRequest(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-	bucketName = os.Getenv("BUCKET_NAME")
-	if bucketName == "" {
-		return events.APIGatewayProxyResponse{
-			StatusCode: http.StatusInternalServerError,
-			Body:       "BUCKET_NAME environment variable is not set",
-		}, nil
-	}
+	bucketName := os.Getenv("BUCKET_NAME")
+	// if bucketName == "" {
+	// 	return events.APIGatewayProxyResponse{
+	// 		StatusCode: http.StatusInternalServerError,
+	// 		Body:       "BUCKET_NAME environment variable is not set",
+	// 	}, nil
+	// }
 
-	if h.Handler.S3Client == nil {
-		return events.APIGatewayProxyResponse{
-			StatusCode: http.StatusInternalServerError,
-			Body:       "S3Client is not initialized",
-		}, nil
-	}
+	// if h.Handler.S3Client == nil {
+	// 	return events.APIGatewayProxyResponse{
+	// 		StatusCode: http.StatusInternalServerError,
+	// 		Body:       "S3Client is not initialized",
+	// 	}, nil
+	// }
 
 	switch request.HTTPMethod {
 	case "GET":

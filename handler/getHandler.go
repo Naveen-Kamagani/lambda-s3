@@ -4,9 +4,10 @@ import (
 	"aws-lambda-s3/repositories"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -17,68 +18,89 @@ type Response struct {
 	NextContinuationToken string   `json:"nextContinuationToken"`
 }
 
+type OutputResponse struct {
+	BucketName   string    `json:"bucketName"`
+	Key          string    `json:"key"`
+	ErrorMessage string    `json:"errorMessage"`
+	Timestamp    time.Time `json:"timestamp"`
+	Body         string    `json:"body"`
+}
+
 type Handler struct {
 	S3Client *repositories.S3Client
 }
 
 func (h *Handler) GetHandler(request events.APIGatewayProxyRequest, bucketName string) (events.APIGatewayProxyResponse, error) {
-	//objectKey := request.PathParameters["objectKey"]
-	objectKey := request.QueryStringParameters["objectKey"]
+	pathObjectKey := request.PathParameters["objectKey"]
+	objectKey, err := url.PathUnescape(pathObjectKey)
+	if err != nil {
+		return generateErrorResponse(bucketName, objectKey, "Invalid objectKey")
+	}
+
 	if objectKey == "" {
 		// Fetch all objects using pagination
 		var allObjects []string
 		continuationToken := ""
 
-		// Call ListObjectsV2 with the current continuation token
 		result, err := h.S3Client.ListObjectsV2(context.TODO(), bucketName)
 		if err != nil {
-			return events.APIGatewayProxyResponse{
-				StatusCode: http.StatusInternalServerError,
-				Body:       err.Error(),
-			}, nil
+			return generateErrorResponse(bucketName, objectKey, err.Error())
 		}
 
-		// Append the current set of objects to the list
 		for _, object := range result.Contents {
 			allObjects = append(allObjects, aws.ToString(object.Key))
 		}
 
-		// // Check if there's a continuation token for more results
 		if result.IsTruncated != nil && *result.IsTruncated {
 			continuationToken = string(*result.NextContinuationToken)
-		} else {
-			continuationToken = ""
 		}
-		// Return the complete list of objects
+
 		resp := Response{
 			Objects:               allObjects,
-			NextContinuationToken: continuationToken, // No continuation token since all objects are fetched
+			NextContinuationToken: continuationToken,
 		}
 		body, _ := json.Marshal(resp)
-		// response = events.APIGatewayProxyResponse{
-		// 	StatusCode: http.StatusOK,
-		// 	Body:       string(body),
-		// }
-		fmt.Printf("Objects in ListObjectsV2 - %s", string(body))
-		//body, _ := json.Marshal(resp)
-		return events.APIGatewayProxyResponse{
-			StatusCode: http.StatusOK,
-			Body:       string(body),
-		}, nil
+		return generateSuccessResponse(bucketName, objectKey, "", string(body))
 	} else {
-		// Get a single object
+
 		getObjectOutput, err := h.S3Client.GetObject(context.TODO(), bucketName, objectKey)
 		if err != nil {
-			return events.APIGatewayProxyResponse{
-				StatusCode: http.StatusInternalServerError,
-				Body:       err.Error(),
-			}, nil
+			return generateErrorResponse(bucketName, objectKey, err.Error())
 		}
 		defer getObjectOutput.Body.Close()
+
 		body, _ := io.ReadAll(getObjectOutput.Body)
-		return events.APIGatewayProxyResponse{
-			StatusCode: http.StatusOK,
-			Body:       string(body),
-		}, nil
+		return generateSuccessResponse(bucketName, objectKey, "", string(body))
 	}
+}
+
+// Helper function to generate a success response
+func generateSuccessResponse(bucketName, key, errorMessage string, successOutput string) (events.APIGatewayProxyResponse, error) {
+	output := OutputResponse{
+		BucketName:   bucketName,
+		Key:          key,
+		ErrorMessage: errorMessage,
+		Timestamp:    time.Now(),
+		Body:         successOutput,
+	}
+	body, _ := json.Marshal(output)
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusOK,
+		Body:       string(body),
+	}, nil
+}
+
+// Helper function to generate an error response
+func generateErrorResponse(bucketName, key, errorMessage string) (events.APIGatewayProxyResponse, error) {
+	output := OutputResponse{
+		BucketName:   bucketName,
+		Key:          key,
+		ErrorMessage: errorMessage,
+		Timestamp:    time.Now(),
+	}
+	body, _ := json.Marshal(output)
+	return events.APIGatewayProxyResponse{
+		StatusCode: http.StatusInternalServerError,
+		Body:       string(body),
+	}, nil
 }

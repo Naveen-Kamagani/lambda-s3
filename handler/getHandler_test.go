@@ -2,21 +2,59 @@ package handler
 
 import (
 	"aws-lambda-s3/repositories"
+	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/stretchr/testify/assert"
 )
 
-func generateExpectedBody(objectCount int, nextContinuationToken string) string {
+// Helper function to generate the expected body for success responses
+func generateExpectedBody(bucketName, key, errorMessage string, objectCount int, nextContinuationToken string) (string, error) {
 	var objectList []string
-	for i := 1; i <= objectCount; i++ {
-		objectList = append(objectList, fmt.Sprintf("\"object%d.txt\"", i))
+	var resp Response
+	output := OutputResponse{
+		BucketName:   bucketName,
+		Key:          key,
+		ErrorMessage: errorMessage,
+		Timestamp:    time.Now(),
 	}
-	return fmt.Sprintf(`{"objects":[%s],"nextContinuationToken":"%s"}`, strings.Join(objectList, ","), nextContinuationToken)
+	if errorMessage != "" {
+		output.Body = ""
+		body, err := json.Marshal(output)
+		if err != nil {
+			return "", err
+		}
+		return string(body), nil
+	}
+	if objectCount == 1 {
+		objectContent := "{\"SomethingCool\":\"cool beans\"}"
+		output.Body = objectContent
+		body, err := json.Marshal(output)
+		if err != nil {
+			return "", err
+		}
+		return string(body), nil
+	} else {
+		for i := 1; i <= objectCount; i++ {
+			objectList = append(objectList, fmt.Sprintf("object%d.txt", i))
+		}
+		resp = Response{
+			Objects:               objectList,
+			NextContinuationToken: nextContinuationToken,
+		}
+	}
+	respBody, _ := json.Marshal(resp)
+
+	output.Body = string(respBody)
+	body, err := json.Marshal(output)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
 }
 
 func TestGetHandler(t *testing.T) {
@@ -32,15 +70,21 @@ func TestGetHandler(t *testing.T) {
 				PathParameters: map[string]string{"objectKey": ""},
 			},
 			expectedStatusCode: http.StatusOK,
-			expectedBody:       generateExpectedBody(30, ""),
+			expectedBody: func() string {
+				body, _ := generateExpectedBody("test-bucket", "", "", 30, "")
+				return body
+			}(),
 		},
 		{
-			name: "valid key",
+			name: "valid",
 			request: events.APIGatewayProxyRequest{
 				PathParameters: map[string]string{"objectKey": "object1.txt"},
 			},
 			expectedStatusCode: http.StatusOK,
-			expectedBody:       "{\"SomethingCool\":\"cool beans\"}",
+			expectedBody: func() string {
+				body, _ := generateExpectedBody("test-bucket", "object1.txt", "", 1, "")
+				return body
+			}(),
 		},
 		{
 			name: "invalid key",
@@ -48,7 +92,10 @@ func TestGetHandler(t *testing.T) {
 				PathParameters: map[string]string{"objectKey": "non-existent.txt"},
 			},
 			expectedStatusCode: http.StatusInternalServerError,
-			expectedBody:       "invalid key or object key does not exist in the bucket",
+			expectedBody: func() string {
+				body, _ := generateExpectedBody("test-bucket", "non-existent.txt", "invalid key or object key does not exist in the bucket", 0, "")
+				return body
+			}(),
 		},
 	}
 
@@ -64,7 +111,14 @@ func TestGetHandler(t *testing.T) {
 			response, err := h.GetHandler(tt.request, "test-bucket")
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedStatusCode, response.StatusCode)
-			assert.Equal(t, tt.expectedBody, response.Body)
+
+			// Compare the body while ignoring the timestamp
+			var expectedOutput, actualOutput OutputResponse
+			_ = json.Unmarshal([]byte(tt.expectedBody), &expectedOutput)
+			_ = json.Unmarshal([]byte(response.Body), &actualOutput)
+
+			expectedOutput.Timestamp = actualOutput.Timestamp // Ignore timestamp for comparison
+			assert.Equal(t, expectedOutput, actualOutput)
 		})
 	}
 }
