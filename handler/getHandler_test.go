@@ -67,7 +67,11 @@ func TestGetHandler(t *testing.T) {
 		{
 			name: "less-than-50",
 			request: events.APIGatewayProxyRequest{
-				PathParameters: map[string]string{"objectKey": ""},
+				PathParameters: map[string]string{
+					"source":                   "",
+					"action":                   "",
+					"baseEncodedDocumentTitle": "",
+				},
 			},
 			expectedStatusCode: http.StatusOK,
 			expectedBody: func() string {
@@ -78,22 +82,45 @@ func TestGetHandler(t *testing.T) {
 		{
 			name: "valid",
 			request: events.APIGatewayProxyRequest{
-				PathParameters: map[string]string{"objectKey": "object1.txt"},
+				PathParameters: map[string]string{
+					"source":                   "/",
+					"action":                   "/",
+					"baseEncodedDocumentTitle": "b2JqZWN0MS50eHQK",
+				},
 			},
 			expectedStatusCode: http.StatusOK,
 			expectedBody: func() string {
-				body, _ := generateExpectedBody("test-bucket", "object1.txt", "", 1, "")
+				body, _ := generateExpectedBody("test-bucket", "////object1.txt", "", 1, "")
 				return body
 			}(),
 		},
 		{
 			name: "invalid key",
 			request: events.APIGatewayProxyRequest{
-				PathParameters: map[string]string{"objectKey": "non-existent.txt"},
+				PathParameters: map[string]string{
+					"source":                   "/",
+					"action":                   "/",
+					"baseEncodedDocumentTitle": "bm9uLWV4aXN0ZW50LnR4dAo=",
+				},
 			},
 			expectedStatusCode: http.StatusInternalServerError,
 			expectedBody: func() string {
-				body, _ := generateExpectedBody("test-bucket", "non-existent.txt", "invalid key or object key does not exist in the bucket", 0, "")
+				body, _ := generateExpectedBody("test-bucket", "////non-existent.txt", "invalid key or object key does not exist in the bucket", 0, "")
+				return body
+			}(),
+		},
+		{
+			name: "default",
+			request: events.APIGatewayProxyRequest{
+				PathParameters: map[string]string{
+					"source":                   "/",
+					"action":                   "/",
+					"baseEncodedDocumentTitle": "bm9uLWV4aXN0ZW50LnR4dAo=",
+				},
+			},
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedBody: func() string {
+				body, _ := generateExpectedBody("test-bucket", "////non-existent.txt", "api error : test s3 api error", 0, "")
 				return body
 			}(),
 		},

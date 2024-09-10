@@ -3,10 +3,13 @@ package handler
 import (
 	"aws-lambda-s3/repositories"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -31,18 +34,44 @@ type Handler struct {
 }
 
 func (h *Handler) GetHandler(request events.APIGatewayProxyRequest, bucketName string) (events.APIGatewayProxyResponse, error) {
-	pathObjectKey := request.PathParameters["objectKey"]
-	objectKey, err := url.PathUnescape(pathObjectKey)
+	source, err := url.PathUnescape(request.PathParameters["source"])
 	if err != nil {
-		return generateErrorResponse(bucketName, objectKey, "Invalid objectKey")
+		return generateErrorResponse(bucketName, "", "Invalid source")
+	}
+	action, err := url.PathUnescape(request.PathParameters["action"])
+	if err != nil {
+		return generateErrorResponse(bucketName, "", "Invalid action")
+	}
+	baseEncodedDocumentTitle, err := url.PathUnescape(request.PathParameters["baseEncodedDocumentTitle"])
+	if err != nil {
+		return generateErrorResponse(bucketName, "", "Invalid baseEncodedDocumentTitle")
 	}
 
+	var bucketPrefix, objectKey string
+	if source == "" && action == "" && baseEncodedDocumentTitle == "" {
+		bucketPrefix = ""
+	}
+	if source != "" && action == "" && baseEncodedDocumentTitle == "" {
+		bucketPrefix = fmt.Sprintf("%s/", source)
+	}
+	if source != "" && action != "" && baseEncodedDocumentTitle == "" {
+		bucketPrefix = fmt.Sprintf("%s/%s/", source, action)
+	}
+	if source != "" && action != "" && baseEncodedDocumentTitle != "" {
+		decodedKey, err := base64.URLEncoding.DecodeString(baseEncodedDocumentTitle)
+		if err != nil {
+			return generateErrorResponse(bucketName, objectKey, "Invalid objectKey")
+		}
+		objectKey = strings.TrimSpace(fmt.Sprintf("%s/%s/%s", source, action, string(decodedKey)))
+	}
+
+	//fmt.Println("Object Key = ", objectKey)
 	if objectKey == "" {
 		// Fetch all objects using pagination
 		var allObjects []string
 		continuationToken := ""
 
-		result, err := h.S3Client.ListObjectsV2(context.TODO(), bucketName)
+		result, err := h.S3Client.ListObjectsV2(context.TODO(), bucketName, bucketPrefix)
 		if err != nil {
 			return generateErrorResponse(bucketName, objectKey, err.Error())
 		}

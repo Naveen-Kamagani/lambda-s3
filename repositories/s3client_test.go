@@ -31,6 +31,7 @@ func TestS3ClientGet(t *testing.T) {
 				ctx:    context.TODO(),
 				key:    "testkey",
 				bucket: "testbucket",
+				//bucketPrefix: "",
 			},
 			client: &S3Mock{
 				MockTest: "valid key",
@@ -68,8 +69,9 @@ func TestS3ClientGet(t *testing.T) {
 
 func TestS3ClientListObjects(t *testing.T) {
 	type args struct {
-		ctx    context.Context
-		bucket string
+		ctx          context.Context
+		bucket       string
+		bucketPrefix string
 	}
 	tests := []struct {
 		name                 string
@@ -82,8 +84,9 @@ func TestS3ClientListObjects(t *testing.T) {
 		{
 			name: "Less than 50 items in bucket",
 			args: args{
-				ctx:    context.TODO(),
-				bucket: "testbucket1",
+				ctx:          context.TODO(),
+				bucket:       "testbucket1",
+				bucketPrefix: "",
 			},
 			client: &S3Mock{
 				MockTest: "less-than-50",
@@ -95,8 +98,9 @@ func TestS3ClientListObjects(t *testing.T) {
 		{
 			name: "More than 50 items in bucket with pagination",
 			args: args{
-				ctx:    context.TODO(),
-				bucket: "testbucket1",
+				ctx:          context.TODO(),
+				bucket:       "testbucket1",
+				bucketPrefix: "",
 			},
 			client: &S3Mock{
 				MockTest: "more-than-50",
@@ -108,8 +112,9 @@ func TestS3ClientListObjects(t *testing.T) {
 		{
 			name: "Error case",
 			args: args{
-				ctx:    context.TODO(),
-				bucket: "testbucket3",
+				ctx:          context.TODO(),
+				bucket:       "testbucket3",
+				bucketPrefix: "",
 			},
 			client: &S3Mock{
 				MockTest: "error",
@@ -125,7 +130,7 @@ func TestS3ClientListObjects(t *testing.T) {
 			c := &S3Client{
 				Client: tt.client,
 			}
-			resp, err := c.ListObjectsV2(tt.args.ctx, tt.args.bucket)
+			resp, err := c.ListObjectsV2(tt.args.ctx, tt.args.bucket, tt.args.bucketPrefix)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ListObjectsV2() error = %v, wantErr %v", err, tt.wantErr)
 				return

@@ -78,18 +78,26 @@ func TestDeleteHandler(t *testing.T) {
 		{
 			name: "valid",
 			request: events.APIGatewayProxyRequest{
-				PathParameters: map[string]string{"objectKey": "object1.txt"},
+				PathParameters: map[string]string{
+					"source":                   "/",
+					"action":                   "/",
+					"baseEncodedDocumentTitle": "b2JqZWN0MS50eHQK",
+				},
 			},
 			expectedStatusCode: http.StatusOK,
 			expectedBody: func() string {
-				body, _ := generateDeleteExpectedBody("test-bucket", "object1.txt", "", "Deleted object1.txt successfully")
+				body, _ := generateDeleteExpectedBody("test-bucket", "////object1.txt", "", "Deleted ////object1.txt successfully")
 				return body
 			}(),
 		},
 		{
 			name: "invalid",
 			request: events.APIGatewayProxyRequest{
-				PathParameters: map[string]string{"objectKey": ""},
+				PathParameters: map[string]string{
+					"source":                   "/",
+					"action":                   "/",
+					"baseEncodedDocumentTitle": "",
+				},
 			},
 			expectedStatusCode: http.StatusInternalServerError,
 			expectedBody: func() string {
@@ -100,11 +108,16 @@ func TestDeleteHandler(t *testing.T) {
 		{
 			name: "error",
 			request: events.APIGatewayProxyRequest{
-				PathParameters: map[string]string{"objectKey": "object2.txt"},
+				//PathParameters: map[string]string{"objectKey": "object2.txt"},
+				PathParameters: map[string]string{
+					"source":                   "/",
+					"action":                   "/",
+					"baseEncodedDocumentTitle": "bm9uLWV4aXN0ZW50LnR4dAo=",
+				},
 			},
 			expectedStatusCode: http.StatusInternalServerError,
 			expectedBody: func() string {
-				body, _ := generateDeleteExpectedBody("test-bucket", "object2.txt", "Error deleting object2.txt: error deleting object", "")
+				body, _ := generateDeleteExpectedBody("test-bucket", "////non-existent.txt", "Error deleting ////non-existent.txt: error deleting object", "")
 				return body
 			}(),
 		},

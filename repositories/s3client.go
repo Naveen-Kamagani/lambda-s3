@@ -57,8 +57,8 @@ func (c *S3Client) GetObject(ctx context.Context, bucket string, key string) (*s
 		return nil, errors.New("no key was passed in")
 	}
 	i := &s3.GetObjectInput{
-		Bucket: &bucket,
-		Key:    &key,
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
 	}
 	return c.Client.GetObject(ctx, i)
 }
@@ -78,7 +78,7 @@ func (c *S3Client) DeleteObject(ctx context.Context, bucket string, key string) 
 	return c.Client.DeleteObject(ctx, input)
 }
 
-func (c *S3Client) ListObjectsV2(ctx context.Context, bucket string) (*s3.ListObjectsV2Output, error) {
+func (c *S3Client) ListObjectsV2(ctx context.Context, bucket, bucketPrefix string) (*s3.ListObjectsV2Output, error) {
 	if bucket == "" {
 		return nil, errors.New("no bucket was passed in")
 	}
@@ -87,6 +87,7 @@ func (c *S3Client) ListObjectsV2(ctx context.Context, bucket string) (*s3.ListOb
 	input := &s3.ListObjectsV2Input{
 		Bucket:  aws.String(bucket),
 		MaxKeys: aws.Int32(50),
+		Prefix:  aws.String(bucketPrefix),
 		//ContinuationToken: continuationToken,
 	}
 

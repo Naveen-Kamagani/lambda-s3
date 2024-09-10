@@ -71,7 +71,7 @@ func (s *S3Mock) GetObject(_ context.Context, params *s3.GetObjectInput, _ ...fu
 	}
 
 	switch strings.ToLower(s.MockTest) {
-	case "valid key":
+	case "valid":
 		if params.Bucket == nil || params.Key == nil {
 			return nil, errors.New("bucket or key was empty")
 		}
