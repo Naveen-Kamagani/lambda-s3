@@ -11,7 +11,9 @@ import (
 )
 
 func (h *Handler) DeleteHandler(request events.APIGatewayProxyRequest, bucketName string) (events.APIGatewayProxyResponse, error) {
-
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
 	source, err := url.PathUnescape(request.PathParameters["source"])
 	if err != nil {
 		return generateErrorResponse(bucketName, "", "Invalid source")
@@ -43,5 +45,5 @@ func (h *Handler) DeleteHandler(request events.APIGatewayProxyRequest, bucketNam
 		return generateErrorResponse(bucketName, objectKey, fmt.Sprintf("Error deleting %s: %v", objectKey, err.Error()))
 	}
 
-	return generateSuccessResponse(bucketName, objectKey, "", fmt.Sprintf("Deleted %s successfully", objectKey))
+	return generateSuccessResponse(bucketName, objectKey, "", fmt.Sprintf("Deleted %s successfully", objectKey), headers)
 }

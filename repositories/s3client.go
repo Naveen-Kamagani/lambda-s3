@@ -78,7 +78,7 @@ func (c *S3Client) DeleteObject(ctx context.Context, bucket string, key string) 
 	return c.Client.DeleteObject(ctx, input)
 }
 
-func (c *S3Client) ListObjectsV2(ctx context.Context, bucket, bucketPrefix string) (*s3.ListObjectsV2Output, error) {
+func (c *S3Client) ListObjectsV2(ctx context.Context, bucket, bucketPrefix, continuationToken string) (*s3.ListObjectsV2Output, error) {
 	if bucket == "" {
 		return nil, errors.New("no bucket was passed in")
 	}
@@ -89,6 +89,10 @@ func (c *S3Client) ListObjectsV2(ctx context.Context, bucket, bucketPrefix strin
 		MaxKeys: aws.Int32(50),
 		Prefix:  aws.String(bucketPrefix),
 		//ContinuationToken: continuationToken,
+	}
+	// If a continuationToken is provided, add it to the input
+	if continuationToken != "" {
+		input.ContinuationToken = aws.String(continuationToken)
 	}
 
 	// Make the API call

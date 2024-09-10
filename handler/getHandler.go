@@ -65,13 +65,19 @@ func (h *Handler) GetHandler(request events.APIGatewayProxyRequest, bucketName s
 		objectKey = strings.TrimSpace(fmt.Sprintf("%s/%s/%s", source, action, string(decodedKey)))
 	}
 
+	// Add continuation token to response headers, if present
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
 	//fmt.Println("Object Key = ", objectKey)
 	if objectKey == "" {
 		// Fetch all objects using pagination
 		var allObjects []string
-		continuationToken := ""
+		//continuationToken := ""
+		// Get the continuation token from the headers
+		continuationToken := request.Headers["x-continuation-token"]
 
-		result, err := h.S3Client.ListObjectsV2(context.TODO(), bucketName, bucketPrefix)
+		result, err := h.S3Client.ListObjectsV2(context.TODO(), bucketName, bucketPrefix, continuationToken)
 		if err != nil {
 			return generateErrorResponse(bucketName, objectKey, err.Error())
 		}
@@ -84,12 +90,14 @@ func (h *Handler) GetHandler(request events.APIGatewayProxyRequest, bucketName s
 			continuationToken = string(*result.NextContinuationToken)
 		}
 
+		headers["x-continuation-token"] = continuationToken
+
 		resp := Response{
 			Objects:               allObjects,
 			NextContinuationToken: continuationToken,
 		}
 		body, _ := json.Marshal(resp)
-		return generateSuccessResponse(bucketName, objectKey, "", string(body))
+		return generateSuccessResponse(bucketName, objectKey, "", string(body), headers)
 	} else {
 
 		getObjectOutput, err := h.S3Client.GetObject(context.TODO(), bucketName, objectKey)
@@ -99,12 +107,12 @@ func (h *Handler) GetHandler(request events.APIGatewayProxyRequest, bucketName s
 		defer getObjectOutput.Body.Close()
 
 		body, _ := io.ReadAll(getObjectOutput.Body)
-		return generateSuccessResponse(bucketName, objectKey, "", string(body))
+		return generateSuccessResponse(bucketName, objectKey, "", string(body), headers)
 	}
 }
 
 // Helper function to generate a success response
-func generateSuccessResponse(bucketName, key, errorMessage string, successOutput string) (events.APIGatewayProxyResponse, error) {
+func generateSuccessResponse(bucketName, key, errorMessage string, successOutput string, headers map[string]string) (events.APIGatewayProxyResponse, error) {
 	output := OutputResponse{
 		BucketName:   bucketName,
 		Key:          key,
@@ -116,6 +124,7 @@ func generateSuccessResponse(bucketName, key, errorMessage string, successOutput
 	return events.APIGatewayProxyResponse{
 		StatusCode: http.StatusOK,
 		Body:       string(body),
+		Headers:    headers,
 	}, nil
 }
 

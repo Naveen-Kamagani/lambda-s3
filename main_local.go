@@ -70,16 +70,16 @@ func main() {
 
 	// Create a mock API Gateway request
 	request := events.APIGatewayProxyRequest{
+		//HTTPMethod: "GET",
 		HTTPMethod: "GET",
-		//HTTPMethod: "DELETE",
 		// PathParameters: map[string]string{
 		// 	"source":                   "create_folder",
 		// 	"action":                   "SELECT",
 		// 	"baseEncodedDocumentTitle": "UFJUWV9JRCNDVVNUX0lECg==",
 		// },
 		PathParameters: map[string]string{
-			"source":                   "create_folder",
-			"action":                   "INSERT",
+			"source":                   "",
+			"action":                   "",
 			"baseEncodedDocumentTitle": "",
 		},
 		// PathParameters: map[string]string{

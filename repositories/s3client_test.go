@@ -69,9 +69,10 @@ func TestS3ClientGet(t *testing.T) {
 
 func TestS3ClientListObjects(t *testing.T) {
 	type args struct {
-		ctx          context.Context
-		bucket       string
-		bucketPrefix string
+		ctx               context.Context
+		bucket            string
+		bucketPrefix      string
+		continuationToken string
 	}
 	tests := []struct {
 		name                 string
@@ -130,7 +131,7 @@ func TestS3ClientListObjects(t *testing.T) {
 			c := &S3Client{
 				Client: tt.client,
 			}
-			resp, err := c.ListObjectsV2(tt.args.ctx, tt.args.bucket, tt.args.bucketPrefix)
+			resp, err := c.ListObjectsV2(tt.args.ctx, tt.args.bucket, tt.args.bucketPrefix, tt.args.continuationToken)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ListObjectsV2() error = %v, wantErr %v", err, tt.wantErr)
 				return
